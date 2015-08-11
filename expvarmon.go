@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 )
@@ -63,6 +64,7 @@ var (
 		valueUnit      string
 		valueUnitShort string
 	})
+
 	mutex          sync.RWMutex
 	lastConsumerId uint
 	s              server
@@ -169,36 +171,43 @@ func (s *server) gatherData() {
 			memTotalAlloc.Set(int64(ms.TotalAlloc))
 			numGoroutine.Set(int64(runtime.NumGoroutine()))
 
-			u := update{
-				Ts:     now.Unix() * 1000,
-				Values: make(map[string]string),
-			}
-
 			func() {
-				mutex.Lock()
-				defer mutex.Unlock()
+				u := update{
+					Ts:     now.Unix() * 1000,
+					Values: make(map[string]string),
+				}
 
-				expvar.Do(func(kv expvar.KeyValue) {
-					d, ok := dataStorage[kv.Key]
-					if !ok {
-						d = make(dataStorageItems, 0, maxCount)
+				func() {
+					mutex.Lock()
+					defer mutex.Unlock()
+
+					for k, _ := range infoStorage {
+						d, ok := dataStorage[k]
+						if !ok {
+							d = make(dataStorageItems, 0, maxCount)
+						}
+						v := expvar.Get(k)
+						if v != nil {
+							s := v.String()
+							d = append(d, &struct {
+								ts    int64
+								value string
+							}{
+								ts:    now.Unix() * 1000,
+								value: s,
+							})
+							if len(d) > maxCount {
+								d = d[len(d)-maxCount:]
+							}
+							dataStorage[k] = d
+							u.Values[k] = s
+						} else {
+							fmt.Println(k)
+						}
 					}
-					d = append(d, &struct {
-						ts    int64
-						value string
-					}{
-						ts:    now.Unix() * 1000,
-						value: kv.Value.String(),
-					})
-					if len(d) > maxCount {
-						d = d[len(d)-maxCount:]
-					}
-					dataStorage[kv.Key] = d
-					u.Values[kv.Key] = kv.Value.String()
-				})
+				}()
+				s.sendToConsumers(u)
 			}()
-
-			s.sendToConsumers(u)
 
 		}
 	}
@@ -341,6 +350,18 @@ func dataHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ")")
 }
 
+type Vars []struct {
+	Var      string
+	Name     string
+	Selected int
+}
+
+func (v Vars) Len() int { return len(v) }
+
+func (v Vars) Swap(i, j int) { v[i], v[j] = v[j], v[i] }
+
+func (v Vars) Less(i, j int) bool { return v[i].Name < v[j].Name }
+
 func handleTemplate(templateName, templateBody string) func(http.ResponseWriter, *http.Request) {
 	templ, err := template.New(templateName).Parse(templateBody)
 	if err != nil {
@@ -360,11 +381,7 @@ func handleTemplate(templateName, templateBody string) func(http.ResponseWriter,
 			ValueUnit      string
 			ValueUnitShort string
 		}
-		t := _T{Var: r.FormValue("var"), Vars: make([]struct {
-			Var      string
-			Name     string
-			Selected int
-		}, 0)}
+		t := _T{Var: r.FormValue("var"), Vars: make(Vars, 0)}
 
 		i, ok := infoStorage[r.FormValue("var")]
 		if !ok {
@@ -377,31 +394,56 @@ func handleTemplate(templateName, templateBody string) func(http.ResponseWriter,
 			t.ValueUnitShort = i.valueUnitShort
 		}
 
-		expvar.Do(func(kv expvar.KeyValue) {
-			if vn, ok := infoStorage[kv.Key]; ok {
-				if kv.Key == t.Var {
-					t.Vars = append(t.Vars, struct {
-						Var      string
-						Name     string
-						Selected int
-					}{
-						Var:      kv.Key,
-						Name:     vn.name,
-						Selected: 1,
-					})
-				} else {
-					t.Vars = append(t.Vars, struct {
-						Var      string
-						Name     string
-						Selected int
-					}{
-						Var:      kv.Key,
-						Name:     vn.name,
-						Selected: 0,
-					})
-				}
+		for k, _ := range infoStorage {
+			if k == t.Var {
+				t.Vars = append(t.Vars, struct {
+					Var      string
+					Name     string
+					Selected int
+				}{
+					Var:      k,
+					Name:     infoStorage[k].name,
+					Selected: 1,
+				})
+			} else {
+				t.Vars = append(t.Vars, struct {
+					Var      string
+					Name     string
+					Selected int
+				}{
+					Var:      k,
+					Name:     infoStorage[k].name,
+					Selected: 0,
+				})
 			}
-		})
+		}
+		sort.Sort(Vars(t.Vars))
+
+		//		expvar.Do(func(kv expvar.KeyValue) {
+		//			if vn, ok := infoStorage[kv.Key]; ok {
+		//				if kv.Key == t.Var {
+		//					t.Vars = append(t.Vars, struct {
+		//						Var      string
+		//						Name     string
+		//						Selected int
+		//					}{
+		//						Var:      kv.Key,
+		//						Name:     vn.name,
+		//						Selected: 1,
+		//					})
+		//				} else {
+		//					t.Vars = append(t.Vars, struct {
+		//						Var      string
+		//						Name     string
+		//						Selected int
+		//					}{
+		//						Var:      kv.Key,
+		//						Name:     vn.name,
+		//						Selected: 0,
+		//					})
+		//				}
+		//			}
+		//		})
 		if r.FormValue("var") == "" {
 			t.Vars = append(t.Vars, struct {
 				Var      string
