@@ -31,7 +31,7 @@ type server struct {
 }
 
 const (
-	maxCount int = 86400
+	maxCount int = 60 * 60 * 10 //86400
 )
 
 type dataStorageItems []*struct {
@@ -91,52 +91,57 @@ func RegisterVariableInfo(name, fullName, valueUnit, valueUnitShort string) {
 }
 func (s *server) gatherData() {
 	memAlloc := expvar.NewInt("MemStats_Alloc")
-
-	memBuckHashSys := expvar.NewInt("MemStats_BuckHashSys")
-	memFrees := expvar.NewInt("MemStats_Frees")
-	memHeapAlloc := expvar.NewInt("MemStats_HeapAlloc")
-	memHeapIdle := expvar.NewInt("MemStats_HeapIdle")
-	memHeapInuse := expvar.NewInt("MemStats_HeapInuse")
-	memHeapObjects := expvar.NewInt("MemStats_HeapObjects")
-	memHeapReleased := expvar.NewInt("MemStats_HeapReleased")
-	memHeapSys := expvar.NewInt("MemStats_HeapSys")
-
+	memTotalAlloc := expvar.NewInt("MemStats_TotalAlloc")
+	memSys := expvar.NewInt("MemStats_Sys")
 	memLookups := expvar.NewInt("MemStats_Lookups")
 	memMallocs := expvar.NewInt("MemStats_Mallocs")
-	memMCacheInuse := expvar.NewInt("MemStats_MCacheInuse")
-	memMCacheSys := expvar.NewInt("MemStats_MCacheSys")
-	memMSpanInuse := expvar.NewInt("MemStats_MSpanInuse")
-	memMSpanSys := expvar.NewInt("MemStats_MSpanSys")
+	memFrees := expvar.NewInt("MemStats_Frees")
 
-	memNumGC := expvar.NewInt("MemStats_NumGC")
-	memPauseNs := expvar.NewInt("MemStats_PauseNs")
+	memHeapAlloc := expvar.NewInt("MemStats_HeapAlloc")
+	memHeapSys := expvar.NewInt("MemStats_HeapSys")
+	memHeapIdle := expvar.NewInt("MemStats_HeapIdle")
+	memHeapInuse := expvar.NewInt("MemStats_HeapInuse")
+	memHeapReleased := expvar.NewInt("MemStats_HeapReleased")
+	memHeapObjects := expvar.NewInt("MemStats_HeapObjects")
+
 	memStackInuse := expvar.NewInt("MemStats_StackInuse")
 	memStackSys := expvar.NewInt("MemStats_StackSys")
-	memSys := expvar.NewInt("MemStats_Sys")
-	memTotalAlloc := expvar.NewInt("MemStats_TotalAlloc")
+	memMSpanInuse := expvar.NewInt("MemStats_MSpanInuse")
+	memMSpanSys := expvar.NewInt("MemStats_MSpanSys")
+	memMCacheInuse := expvar.NewInt("MemStats_MCacheInuse")
+	memMCacheSys := expvar.NewInt("MemStats_MCacheSys")
+	memBuckHashSys := expvar.NewInt("MemStats_BuckHashSys")
+	memGCSys := expvar.NewInt("MemStats_GCSys")
+	memOtherSys := expvar.NewInt("MemStats_OtherSys")
+
+	memPauseNs := expvar.NewInt("MemStats_PauseNs")
 	numGoroutine := expvar.NewInt("Stats_NumGoroutine")
 
-	RegisterVariableInfo("MemStats_Alloc", "Bytes allocated and still in use", "Bytes", "b")
-	RegisterVariableInfo("MemStats_BuckHashSys", "Profiling bucket hash table", "Bytes", "b")
-	RegisterVariableInfo("MemStats_Frees", "General statistics - number of frees", "Pieces", "p")
-	RegisterVariableInfo("MemStats_HeapAlloc", "Heap - bytes allocated and still in use", "Bytes", "b")
-	RegisterVariableInfo("MemStats_HeapIdle", "Heap - bytes in idle spans", "Bytes", "b")
-	RegisterVariableInfo("MemStats_HeapInuse", "Heap - bytes in non-idle span", "Bytes", "b")
-	RegisterVariableInfo("MemStats_HeapObjects", "Heap - total number of allocated objects", "Bytes", "b")
-	RegisterVariableInfo("MemStats_HeapReleased", "Heap - bytes released to the OS", "Bytes", "b")
-	RegisterVariableInfo("MemStats_HeapSys", "Heap - bytes obtained from system", "Bytes", "b")
+	RegisterVariableInfo("MemStats_Alloc", "General statistics - bytes allocated and not yet freed", "Bytes", "b")
+	RegisterVariableInfo("MemStats_TotalAlloc", "General statistics - bytes allocated (even if freed)", "Bytes", "b")
+	RegisterVariableInfo("MemStats_Sys", "General statistics - bytes obtained from system (sum of XxxSys below)", "Bytes", "b")
 	RegisterVariableInfo("MemStats_Lookups", "General statistics - number of pointer lookups", "Pieces", "p")
 	RegisterVariableInfo("MemStats_Mallocs", "General statistics - number of mallocs", "Pieces", "p")
-	RegisterVariableInfo("MemStats_MCacheInuse", "Bytes used by mcache structures", "Bytes", "b")
-	RegisterVariableInfo("MemStats_MCacheSys", "Bytes obtained from system by mcache structures", "Bytes", "b")
-	RegisterVariableInfo("MemStats_MSpanInuse", "Bytes used by mspan structures", "Bytes", "b")
-	RegisterVariableInfo("MemStats_MSpanSys", "Bytes obtained from system by mspan structures", "Bytes", "b")
-	RegisterVariableInfo("MemStats_NumGC", "Number of GC", "Pieces", "p")
+	RegisterVariableInfo("MemStats_Frees", "General statistics - number of frees", "Pieces", "p")
+
+	RegisterVariableInfo("MemStats_HeapAlloc", "Main allocation heap statistics - bytes allocated and not yet freed (same as Alloc above)", "Bytes", "b")
+	RegisterVariableInfo("MemStats_HeapSys", "Main allocation heap statistics - bytes obtained from system", "Bytes", "b")
+	RegisterVariableInfo("MemStats_HeapIdle", "Main allocation heap statistics - bytes in idle spans", "Bytes", "b")
+	RegisterVariableInfo("MemStats_HeapInuse", "Main allocation heap statistics - bytes in non-idle span", "Bytes", "b")
+	RegisterVariableInfo("MemStats_HeapReleased", "Main allocation heap statistics - bytes released to the OS", "Bytes", "b")
+	RegisterVariableInfo("MemStats_HeapObjects", "Main allocation heap statistics - total number of allocated objects", "Pieces", "p")
+
+	RegisterVariableInfo("MemStats_StackInuse", "LowLevel - bytes used by stack allocator - in use now", "Bytes", "b")
+	RegisterVariableInfo("MemStats_StackSys", "LowLevel - bytes used by stack allocator  - obtained from sys", "Bytes", "b")
+	RegisterVariableInfo("MemStats_MSpanInuse", "LowLevel - mspan structures - in use now", "Bytes", "b")
+	RegisterVariableInfo("MemStats_MSpanSys", "LowLevel - mspan structures - obtained from sys", "Bytes", "b")
+	RegisterVariableInfo("MemStats_MCacheInuse", "LowLevel - mcache structures - in use now", "Bytes", "b")
+	RegisterVariableInfo("MemStats_MCacheSys", "LowLevel - mcache structures - obtained from sys", "Bytes", "b")
+	RegisterVariableInfo("MemStats_BuckHashSys", "LowLevel - profiling bucket hash table - obtained from sys", "Bytes", "b")
+	RegisterVariableInfo("MemStats_GCSys", "LowLevel - GC metadata - obtained from sys", "Bytes", "b")
+	RegisterVariableInfo("MemStats_OtherSys", "LowLevel - other system allocations - obtained from sys", "Bytes", "b")
+
 	RegisterVariableInfo("MemStats_PauseNs", "GC pause duration", "Nanoseconds", "ns")
-	RegisterVariableInfo("MemStats_StackInuse", "Bytes used by stack allocator", "Bytes", "b")
-	RegisterVariableInfo("MemStats_StackSys", "Bytes  obtained from system by stack allocator", "Bytes", "b")
-	RegisterVariableInfo("MemStats_Sys", "General statistics - bytes obtained from system (sum of XxxSys below)", "Bytes", "b")
-	RegisterVariableInfo("MemStats_TotalAlloc", "General statistics - bytes allocated (even if freed)", "Bytes", "b")
 	RegisterVariableInfo("Stats_NumGoroutine", "Number of goroutines", "Goroutines", "g")
 
 	timer := time.Tick(time.Second)
@@ -147,28 +152,30 @@ func (s *server) gatherData() {
 			runtime.ReadMemStats(&ms)
 
 			memAlloc.Set(int64(ms.Alloc))
-			memBuckHashSys.Set(int64(ms.BuckHashSys))
-			memFrees.Set(int64(ms.Frees))
-			memHeapAlloc.Set(int64(ms.HeapAlloc))
-			memHeapIdle.Set(int64(ms.HeapIdle))
-			memHeapInuse.Set(int64(ms.HeapInuse))
-			memHeapObjects.Set(int64(ms.HeapObjects))
-			memHeapReleased.Set(int64(ms.HeapReleased))
-			memHeapSys.Set(int64(ms.HeapSys))
-
+			memTotalAlloc.Set(int64(ms.TotalAlloc))
+			memSys.Set(int64(ms.Sys))
 			memLookups.Set(int64(ms.Lookups))
 			memMallocs.Set(int64(ms.Mallocs))
-			memMCacheInuse.Set(int64(ms.MCacheInuse))
-			memMCacheSys.Set(int64(ms.MCacheSys))
-			memMSpanInuse.Set(int64(ms.MSpanInuse))
-			memMSpanSys.Set(int64(ms.MSpanSys))
+			memFrees.Set(int64(ms.Frees))
 
-			memNumGC.Set(int64(ms.NumGC))
-			memPauseNs.Set(int64(ms.PauseNs[(ms.NumGC+255)%256]))
+			memHeapAlloc.Set(int64(ms.HeapAlloc))
+			memHeapSys.Set(int64(ms.HeapSys))
+			memHeapIdle.Set(int64(ms.HeapIdle))
+			memHeapInuse.Set(int64(ms.HeapInuse))
+			memHeapReleased.Set(int64(ms.HeapReleased))
+			memHeapObjects.Set(int64(ms.HeapObjects))
+
 			memStackInuse.Set(int64(ms.StackInuse))
 			memStackSys.Set(int64(ms.StackSys))
-			memSys.Set(int64(ms.Sys))
-			memTotalAlloc.Set(int64(ms.TotalAlloc))
+			memMSpanInuse.Set(int64(ms.MSpanInuse))
+			memMSpanSys.Set(int64(ms.MSpanSys))
+			memMCacheInuse.Set(int64(ms.MCacheInuse))
+			memMCacheSys.Set(int64(ms.MCacheSys))
+			memBuckHashSys.Set(int64(ms.BuckHashSys))
+			memGCSys.Set(int64(ms.GCSys))
+			memOtherSys.Set(int64(ms.OtherSys))
+
+			memPauseNs.Set(int64(ms.PauseNs[(ms.NumGC+255)%256]))
 			numGoroutine.Set(int64(runtime.NumGoroutine()))
 
 			func() {
@@ -197,6 +204,9 @@ func (s *server) gatherData() {
 								value: s,
 							})
 							if len(d) > maxCount {
+								for i := 0; i < len(d)-maxCount; i++ {
+									d[i] = nil
+								}
 								d = d[len(d)-maxCount:]
 							}
 							dataStorage[k] = d
