@@ -31,7 +31,7 @@ type server struct {
 }
 
 const (
-	maxCount int = 60 * 60 * 10 //86400
+	maxCount int = 60 * 60 * 11 //86400
 )
 
 type dataStorageItems []*struct {
